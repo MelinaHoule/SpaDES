@@ -334,11 +334,20 @@ setMethod(
         spreadProbLater <- spreadProb
       }
     }
+
     ### should sanity check map extents
     if (any(is.na(loci)))  {
       # start it in the centre cell, if there is no spreadState
       if (!spreadStateExists)
         loci <- (nrow(landscape)/2L + 0.5) * ncol(landscape)
+    }
+
+    if (any(!is.na(maxSize))) {
+      msEqZero <- maxSize<=0.5
+      if(any(msEqZero)) {
+        loci <- loci[!msEqZero]
+        maxSize <- maxSize[!msEqZero]
+      }
     }
 
     if (spreadStateExists) {
@@ -521,6 +530,7 @@ setMethod(
     if(is.null(neighProbs)) {
       numNeighs <- NULL
     }
+    numRetries <- rep(0, length(loci))
     # while there are active cells
     while (length(loci) & (n <= iterations) ) {
       if(!is.null(neighProbs)) {
@@ -670,6 +680,7 @@ setMethod(
         #   size <- size + length(events)
         # } else {
         if (!noMaxSize) {
+          #browser(expr=n>=48)
           if (allowOverlap | returnDistances) {
             len <- tabulate(potentials[, 3L], length(maxSize))
           } else {
@@ -685,10 +696,11 @@ setMethod(
                 thisID <- which(spreads[potentials[, 1L]] == whichID[i])
               }
 
-              potentials <- potentials[-sample(thisID, toRm[i]), , drop = FALSE]
+              potentials <- potentials[-resample(thisID, toRm[i]), , drop = FALSE]
             }
             events <- potentials[, 2L]
           }
+          #browser(expr=!(tabulate(spreads, length(maxSize))[6] == size[6]))
           size <- pmin(size + len, maxSize) ## Quick? and dirty. fast but loose (too flexible)
         }
 
@@ -855,11 +867,21 @@ setMethod(
       }
 
       if(!is.null(exactSizes)){
-        browser()
-        tooSmall <- tabulate(spreads, length(maxSize)) < maxSize
-        inactive <- tabulate(spreads[events], length(maxSize))==0
-        if(any(tooSmall & inactive)) {
-          events <- c(loci[tooSmall & inactive], events)
+        if(all(numRetries < 100)) {
+          tooSmall <- tabulate(spreads, length(maxSize)) < maxSize
+          inactive <- tabulate(spreads[events], length(maxSize))==0
+
+          #size <- pmin(size + len, maxSize) ## Quick? and dirty. fast but loose (too flexible)
+
+          needPersist <- tooSmall & inactive
+          if(any(needPersist)) {
+            numRetries <- numRetries + needPersist
+
+            keepLoci <- spreads[loci] %fin% which(tooSmall & inactive)
+            print(numRetries)
+            print(n)
+            events <- c(loci[keepLoci], events)
+          }
         }
       }
 
@@ -1551,3 +1573,6 @@ directionFromEachPoint <- function(from, to = NULL, landscape) {
 `%fin%` <- function(x, table) {
   fmatch(x, table, nomatch = 0L) > 0L
 }
+
+
+resample <- function(x, ...) x[sample.int(length(x), ...)]
